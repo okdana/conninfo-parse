@@ -1,0 +1,27 @@
+#!/bin/bash
+
+die() {
+	printf '%s: %s\n' "${0##*/}" "${*}"
+	exit 1
+}
+
+type -P 'pkg-config' > /dev/null 2>&1 ||
+die 'Missing pkg-config.'
+
+pkg-config --cflags 'libpq' > /dev/null 2>&1 ||
+die 'Missing libpq.'
+
+pkg-config --cflags 'json-c' > /dev/null 2>&1 ||
+die 'Missing json-c.'
+
+cat <<- EOF > Makefile.cf
+	CFLAGS :=
+	CFLAGS += $( pkg-config --cflags libpq )
+	CFLAGS += $( pkg-config --cflags json-c )
+	LIBS   :=
+	LIBS   += $( pkg-config --libs libpq )
+	LIBS   += $( pkg-config --libs json-c )
+EOF
+
+exit 0
+
