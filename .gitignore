@@ -1,0 +1,9 @@
+*.o
+*.out
+*.so
+*.dSYM
+/Makefile.cf
+/conninfo-parse
+
+.DS_Store
+
