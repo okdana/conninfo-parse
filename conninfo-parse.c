@@ -58,23 +58,21 @@ static const char *long_usage_opts =
  *   The escaped string. Caller must free.
  */
 char *escape_shell_argument(const char *arg) {
-	int   i = 0, j = 0, slashes = 0;
+	int   i = 0, j = 0;
 	char *escaped;
 
 	escaped      = malloc(strlen(arg) * strlen("'\\''") + 3);
 	escaped[j++] = '\'';
 
 	for ( i = 0; arg[i] != '\0'; i++ ) {
-		if ( arg[i] == '\'' && slashes % 2 == 0 ) {
-			escaped[j+0] = '\'';
-			escaped[j+1] = '\\';
-			escaped[j+2] = '\'';
-			escaped[j+3] = '\'';
-			j            = j + 4;
+		if ( arg[i] == '\'' ) {
+			escaped[j++] = '\'';
+			escaped[j++] = '\\';
+			escaped[j++] = '\'';
+			escaped[j++] = '\'';
 		} else {
 			escaped[j++] = arg[i];
 		}
-		slashes = arg[i] == '\\' ? slashes + 1 : 0;
 	}
 
 	escaped[j++] = '\'';
