@@ -1,0 +1,27 @@
+#!/bin/bash
+
+source "${DDT_TEST_DIR}/conninfo-parse.inc"
+
+plan:describe 'conninfo-parse(1): JSON format'
+
+test:empty_string_is_handled_correctly() {
+	conninfo-parse -j '' |
+	grep -xF '{ }'
+}
+
+test:single_parameter_is_handled_correctly() {
+	conninfo-parse -j 'dbname=foo' |
+	grep -xF '{ "dbname": "foo" }'
+
+	conninfo-parse -j 'dbname=foo' |
+	grep -c '.' | grep -xF '1'
+}
+
+test:multiple_parameters_are_handled_correctly() {
+	conninfo-parse -j 'dbname=foo host=bar' |
+	grep -xF '{ "dbname": "foo", "host": "bar" }'
+
+	conninfo-parse -j 'dbname=foo host=bar' |
+	grep -c '.' | grep -xF '1'
+}
+
