@@ -17,7 +17,7 @@
 
 #define CP_NAME    "conninfo-parse"
 #define CP_DESC    "Parses a PostgreSQL conninfo string and outputs the result."
-#define CP_VERSION "0.1.1"
+#define CP_VERSION "0.1.2"
 
 #define CP_OUTPUT_DELIMITED 0
 #define CP_OUTPUT_SHELL     1
