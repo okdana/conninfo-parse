@@ -17,7 +17,7 @@
 
 #define CP_NAME    "conninfo-parse"
 #define CP_DESC    "Parses a PostgreSQL conninfo string and outputs the result."
-#define CP_VERSION "0.1.0"
+#define CP_VERSION "0.1.1"
 
 #define CP_OUTPUT_DELIMITED 0
 #define CP_OUTPUT_SHELL     1
@@ -36,15 +36,15 @@ static struct option long_opts[] = {
 
 // Short and long usage text
 static const char *short_usage_opts =
-	"[-h|-V] [-d <d>|-j|-s] conninfo"
+	"[-h|-V] [-d <d>|-j|-s] <conninfo>"
 ;
 static const char *long_usage_opts =
 	"  -h, --help               Display this help information and exit.\n"
 	"  -V, --version            Display version information and exit.\n"
-	"  -d <d>, --delimiter <d>  Output in <d>-delimited format.\n"
+	"  -d <d>, --delimiter <d>  Output in d-delimited format.\n"
 	"  -j, --json               Output in JSON format.\n"
 	"  -s, --shell              Output in shell variable format.\n"
-	"  conninfo                 Set conninfo string to parse.\n"
+	"  <conninfo>               Set conninfo string to parse.\n"
 ;
 
 /**
@@ -192,6 +192,7 @@ int main(int argc, char *argv[]) {
 	// Problem with string
 	if ( conninfo == NULL ) {
 		print_error("Parse error: %s", errmsg);
+		PQfreemem(errmsg);
 		return 1;
 	}
 
@@ -223,7 +224,10 @@ int main(int argc, char *argv[]) {
 
 	if ( output == CP_OUTPUT_JSON ) {
 		fprintf(stdout, "%s\n", json_object_to_json_string(json_obj));
+		json_object_put(json_obj);
 	}
+
+	PQconninfoFree(conninfo);
 
 	return 0;
 }
