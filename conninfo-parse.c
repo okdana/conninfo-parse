@@ -146,7 +146,7 @@ int main(int argc, char *argv[]) {
 	char *errmsg    = NULL;
 
 	PQconninfoOption *conninfo, *param;
-	json_object *json_obj = json_object_new_object();
+	json_object *json_obj;
 
 	while ( (opt = getopt_long(argc, argv, short_opts, long_opts, &opt_index)) >= 0 ) {
 		switch ( opt ) {
@@ -196,6 +196,8 @@ int main(int argc, char *argv[]) {
 		return 1;
 	}
 
+	json_obj = json_object_new_object();
+
 	for ( param = conninfo; param->keyword; ++param ) {
 		if ( param->val == NULL ) {
 			continue;
@@ -224,10 +226,10 @@ int main(int argc, char *argv[]) {
 
 	if ( output == CP_OUTPUT_JSON ) {
 		fprintf(stdout, "%s\n", json_object_to_json_string(json_obj));
-		json_object_put(json_obj);
 	}
 
 	PQconninfoFree(conninfo);
+	json_object_put(json_obj);
 
 	return 0;
 }
