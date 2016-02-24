@@ -26,11 +26,11 @@
 // Short and long options
 static const char *short_opts = ":d:hjsV";
 static struct option long_opts[] = {
-	"help",      no_argument,       0, 'h',
-	"version",   no_argument,       0, 'V',
-	"delimiter", required_argument, 0, 'd',
-	"json",      no_argument,       0, 'j',
-	"shell",     no_argument,       0, 's',
+	{ "help",      no_argument,       0, 'h' },
+	{ "version",   no_argument,       0, 'V' },
+	{ "delimiter", required_argument, 0, 'd' },
+	{ "json",      no_argument,       0, 'j' },
+	{ "shell",     no_argument,       0, 's' },
 	{ 0, 0, 0, 0 }
 };
 

@@ -3,7 +3,7 @@ include ./Makefile.cf
 build: conninfo-parse
 
 conninfo-parse: force
-	$(CC) $(CFLAGS) $(LDFLAGS) -o ./conninfo-parse ./conninfo-parse.c $(LIBS)
+	$(CC) -Wall $(CFLAGS) $(LDFLAGS) -o ./conninfo-parse ./conninfo-parse.c $(LIBS)
 
 install: build
 	cp ./conninfo-parse /usr/local/bin/
