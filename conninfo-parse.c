@@ -91,9 +91,9 @@ __attribute__((__format__(printf, 3, 4)));
  *
  * @see fprintf(3)
  *
- * @param stream The output stream to print to.
+ * @param stream Output stream.
  * @param name   Program name (argv[0]).
- * @param brief  Whether to print the brief (as opposed to full) usage help.
+ * @param brief  Whether to print brief (as opposed to full) usage help.
  *
  * @return int According to *printf().
  */
@@ -104,7 +104,7 @@ __attribute__((__nonnull__(1)));
 /**
  * Escape a string for use as a shell argument.
  *
- * @param arg The argument to escape.
+ * @param arg Argument to escape.
  *
  * @return The escaped argument. Caller must free.
  */
