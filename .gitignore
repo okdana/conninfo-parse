@@ -1,9 +1,8 @@
-*.o
+*.[ao]
 *.out
 *.so
-*.dSYM
-/Makefile.cf
-/conninfo-parse
-
+*.dSYM/
+config.h
+config.mk
+conninfo-parse
 .DS_Store
-

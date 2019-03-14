@@ -1,6 +1,9 @@
 /**
- * Parses a PostgreSQL conninfo string and prints it back in one of several
- * formats.
+ * Command-line utility to parse PostgreSQL a conninfo (DSN) string and print it
+ * back in one of several formats.
+ *
+ * @todo It should be possible to specify both column and row delimiters for
+ *       `-d`
  *
  * @copyright © dana <https://github.com/okdana/conninfo-parse>
  * @license   MIT
@@ -8,229 +11,292 @@
 
 #include <getopt.h>
 #include <stdarg.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
-#include "json.h"
+#include "config.h"
+
+#ifdef CP_HAVE_JSON
+  #include "json.h"
+#endif
+
 #include "libpq-fe.h"
 
 #define CP_NAME    "conninfo-parse"
-#define CP_DESC    "Parses a PostgreSQL conninfo string and outputs the result."
-#define CP_VERSION "0.1.2"
+#define CP_DESC    "Parse a PostgreSQL conninfo string and output the result"
+#define CP_VERSION "0.2.0"
 
-#define CP_OUTPUT_DELIMITED 0
-#define CP_OUTPUT_SHELL     1
-#define CP_OUTPUT_JSON      2
+#define CP_OUT_DELIMITED 0
+#define CP_OUT_SHELL     1
+#define CP_OUT_JSON      2
 
-// Short and long options
-static const char *short_opts = ":d:hjsV";
-static struct option long_opts[] = {
-	{ "help",      no_argument,       0, 'h' },
-	{ "version",   no_argument,       0, 'V' },
-	{ "delimiter", required_argument, 0, 'd' },
-	{ "json",      no_argument,       0, 'j' },
-	{ "shell",     no_argument,       0, 's' },
-	{ 0, 0, 0, 0 }
+// Adapted from sysexits.h
+#define CP_EX_OK          0
+#define CP_EX_ERR         1
+#define CP_EX_USAGE       64
+#define CP_EX_UNAVAILABLE 69
+
+static const char *short_opts = "d:hjqsV";
+static const struct option long_opts[] = {
+  { "help",      no_argument,       0, 'h' },
+  { "version",   no_argument,       0, 'V' },
+  { "quiet",     no_argument,       0, 'q' },
+  { "delimited", required_argument, 0, 'd' },
+  { "delimiter", required_argument, 0, 'd' }, // Legacy name
+  { "json",      no_argument,       0, 'j' },
+  { "shell",     no_argument,       0, 's' },
+  { 0, 0, 0, 0 }
 };
 
-// Short and long usage text
-static const char *short_usage_opts =
-	"[-h|-V] [-d <d>|-j|-s] <conninfo>"
+static const char *short_usage_args =
+  "[-h|-V] [-q] [-d <dc>|-j|-s] <conninfo>"
 ;
-static const char *long_usage_opts =
-	"  -h, --help               Display this help information and exit.\n"
-	"  -V, --version            Display version information and exit.\n"
-	"  -d <d>, --delimiter <d>  Output in d-delimited format.\n"
-	"  -j, --json               Output in JSON format.\n"
-	"  -s, --shell              Output in shell variable format.\n"
-	"  <conninfo>               Set conninfo string to parse.\n"
+static const char *long_usage_args =
+  "  -h, --help            Display this help information and exit\n"
+  "  -V, --version         Display version information and exit\n"
+  "  -q, --quiet           Suppress normal output (validate only)\n"
+  "  -d, --delimited <dc>  Output in delimited format, where <dc> delimits columns\n"
+  "                        and \\n delimits rows\n"
+  "  -j, --json            Output in JSON format\n"
+  "  -s, --shell           Output in shell variable format\n"
+  "  <conninfo>            conninfo string to parse\n"
 ;
 
 /**
- * Escapes a string in a manner suitable for use as a shell command-line
- * argument or variable value.
+ * Print formatted error message.
  *
- * @param const char *arg
- *   The argument to escape.
+ * @see fprintf(3)
  *
- * @return char *
- *   The escaped string. Caller must free.
+ * @param stream Output stream.
+ * @param name   Program name (argv[0]).
+ * @param format Format string.
+ * @param ...    (optional) Format arguments.
+ *
+ * @return According to *printf().
  */
-char *escape_shell_argument(const char *arg) {
-	int   i = 0, j = 0;
-	char *escaped;
-
-	escaped      = malloc(strlen(arg) * strlen("'\\''") + 3);
-	escaped[j++] = '\'';
-
-	for ( i = 0; arg[i] != '\0'; i++ ) {
-		if ( arg[i] == '\'' ) {
-			escaped[j++] = '\'';
-			escaped[j++] = '\\';
-			escaped[j++] = '\'';
-			escaped[j++] = '\'';
-		} else {
-			escaped[j++] = arg[i];
-		}
-	}
-
-	escaped[j++] = '\'';
-	escaped[j++] = '\0';
-
-	return escaped;
-}
+static int
+cp_efprintf(
+  FILE *restrict stream,
+  const char *restrict name,
+  const char *restrict format,
+  ...
+)
+__attribute__((__nonnull__(1, 3)))
+__attribute__((__format__(printf, 3, 4)));
 
 /**
- * Prints usage help.
+ * Print usage help.
  *
- * @param int long_usage
- *   Whether to print the full or brief usage help. Prints full usage if > 0.
+ * @see fprintf(3)
  *
- * @param int fd
- *   The file descriptor to print to.
+ * @param stream The output stream to print to.
+ * @param name   Program name (argv[0]).
+ * @param brief  Whether to print the brief (as opposed to full) usage help.
  *
- * @return void
+ * @return int According to *printf().
  */
-void print_usage(int long_usage, FILE *fd) {
-	// Short usage
-	if ( long_usage <= 0 ) {
-		fprintf(fd, "usage: %s %s\n", CP_NAME, short_usage_opts);
-		return;
-	}
-	// Long usage
-	fprintf(fd, "%s\n\n",              CP_DESC);
-	fprintf(fd, "usage:\n  %s %s\n\n", CP_NAME, short_usage_opts);
-	fprintf(fd, "options:\n%s",        long_usage_opts);
-}
+static int
+cp_fprintu(FILE *restrict stream, const char *restrict name, bool brief)
+__attribute__((__nonnull__(1)));
 
 /**
- * Prints an standard-format error to stderr.
+ * Escape a string for use as a shell argument.
  *
- * @param const char *format
- *   A format string to pass to vfprintf().
+ * @param arg The argument to escape.
  *
- * @param ...
- *   Zero or more additional arguments to pass to vfprintf().
- *
- * @return int
- *   Returns according to vfprintf().
+ * @return The escaped argument. Caller must free.
  */
-int print_error(const char *format, ...) {
-	int     ret;
-	va_list args;
+static char *
+cp_escape_shell_arg(const char *restrict arg)
+__attribute__((__nonnull__))
+__attribute__((__unused__));
 
-	fprintf(stderr, "%s: ", CP_NAME);
+static int
+cp_efprintf(
+  FILE *restrict stream,
+  const char *restrict name,
+  const char *restrict format,
+  ...
+) {
+  int     ret = 0;
+  va_list ap;
 
-	va_start(args, format);
-	ret = vfprintf(stderr, format, args);
-	va_end(args);
+  va_start(ap, format);
+  ret += fprintf(stream, "%s: ", name ?: CP_NAME);
+  ret += vfprintf(stream, format, ap);
+  va_end(ap);
 
-	return ret;
+  return ret;
 }
 
-/**
- * Main entry-point.
- *
- * @param int   argc
- * @param char *argv
- *
- * @return int
- */
+static int
+cp_fprintu(FILE *restrict stream, const char *restrict name, bool brief) {
+  if ( brief ) {
+    return fprintf(stream, "usage: %s %s\n", name ?: CP_NAME, short_usage_args);
+  }
+  return fprintf(
+    stream,
+    "%s\n\n"
+    "usage:\n"
+    "  %s %s\n\n"
+    "options:\n"
+    "%s",
+    CP_DESC,
+    name ?: CP_NAME,
+    short_usage_args,
+    long_usage_args
+  );
+}
+
+static char *
+cp_escape_shell_arg(const char *arg) {
+  char *escaped, *eptr;
+
+  eptr = escaped = malloc(strlen(arg) * strlen("'\\''") + 3);
+  *eptr++ = '\'';
+
+  while ( *arg ) {
+    if ( *arg == '\'' ) {
+      *eptr++ = '\'';
+      *eptr++ = '\\';
+      *eptr++ = '\'';
+      *eptr++ = '\'';
+    } else {
+      *eptr++ = *arg;
+    }
+    arg++;
+  }
+
+  *eptr++ = '\'';
+  *eptr++ = '\0';
+
+  return escaped;
+}
+
 int main(int argc, char *argv[]) {
-	int   opt       = 0;
-	int   opt_index = 0;
-	int   output    = CP_OUTPUT_DELIMITED;
-	char *delimiter = "\t";
-	char *escaped   = NULL;
-	char *errmsg    = NULL;
+  bool quiet  = false;
+  int  idx    = 0;
+  int  opt    = 0;
+  int  output = CP_OUT_DELIMITED;
+  const char *delimiter = "\t";
 
-	PQconninfoOption *conninfo, *param;
-	json_object *json_obj;
+  while ( (opt = getopt_long(argc, argv, short_opts, long_opts, &idx)) >= 0 ) {
+    switch ( opt ) {
+      case 'h':
+        cp_fprintu(stdout, argv[0], false);
+        return CP_EX_OK;
+      case 'V':
+        fprintf(stdout, "%s version %s\n", CP_NAME, CP_VERSION);
+        return CP_EX_OK;
+      case 'q':
+        quiet = true;
+        break;
+      case 'd':
+        if ( ! *optarg ) {
+            cp_efprintf(stderr, argv[0], "invalid delimiter spec\n");
+            cp_fprintu(stderr, argv[0], true);
+            return CP_EX_USAGE;
+        }
+        output    = CP_OUT_DELIMITED;
+        delimiter = optarg;
+        break;
+      case 'j':
+        #ifndef CP_HAVE_JSON
+          cp_efprintf(stderr, argv[0], "JSON support not available\n");
+          return CP_EX_UNAVAILABLE;
+        #endif
+        output = CP_OUT_JSON;
+        break;
+      case 's':
+        output = CP_OUT_SHELL;
+        break;
+      case ':':
+      case '?':
+        cp_fprintu(stderr, argv[0], true);
+        return CP_EX_USAGE;
+      // ???
+      default: abort();
+    }
+  }
 
-	while ( (opt = getopt_long(argc, argv, short_opts, long_opts, &opt_index)) >= 0 ) {
-		switch ( opt ) {
-			// Usage help
-			case 'h':
-				print_usage(1, stdout);
-				return 0;
-			// Print version
-			case 'V':
-				fprintf(stdout, "%s version %s\n", CP_NAME, CP_VERSION);
-				return 0;
-			// Output in delimited format, set delimiter
-			case 'd':
-				output    = CP_OUTPUT_DELIMITED;
-				delimiter = optarg;
-				break;
-			// Output in JSON format
-			case 'j':
-				output = CP_OUTPUT_JSON;
-				break;
-			// Output in shell variable format
-			case 's':
-				output = CP_OUTPUT_SHELL;
-				break;
-			// Unrecognised option
-			case ':':
-			case '?':
-				print_error("Invalid option '%c'\n", optopt);
-				print_usage(0, stderr);
-				return 1;
-		}
-	}
+  if ( optind >= argc ) {
+    cp_efprintf(stderr, argv[0], "expected conninfo string\n");
+    cp_fprintu(stderr, argv[0], true);
+    return CP_EX_USAGE;
+  } else if ( argc > optind + 1 ) {
+    cp_efprintf(stderr, argv[0], "unexpected argument: %s\n", argv[optind + 1]);
+    cp_fprintu(stderr, argv[0], true);
+    return CP_EX_USAGE;
+  }
 
-	// Missing string
-	if ( optind >= argc ) {
-		print_error("No conninfo string provided.\n");
-		print_usage(0, stderr);
-		return 1;
-	}
+  char *errmsg = NULL;
+  PQconninfoOption *conninfo, *param;
+  conninfo = PQconninfoParse(argv[optind], &errmsg);
 
-	conninfo = PQconninfoParse(argv[optind], &errmsg);
+  if ( ! conninfo ) {
+    if ( ! quiet ) {
+      // libpq new-line-terminates its own error messages i guess
+      cp_efprintf(stderr, argv[0], "parse error: %s", errmsg ?: "unknown\n");
+    }
+    if ( errmsg ) {
+      PQfreemem(errmsg);
+    }
+    return CP_EX_ERR;
+  }
 
-	// Problem with string
-	if ( conninfo == NULL ) {
-		print_error("Parse error: %s", errmsg);
-		PQfreemem(errmsg);
-		return 1;
-	}
+  if ( quiet ) {
+    goto end;
+  }
 
-	json_obj = json_object_new_object();
+  #ifdef CP_HAVE_JSON
+    json_object *json_obj = json_object_new_object();
+  #endif
 
-	for ( param = conninfo; param->keyword; ++param ) {
-		if ( param->val == NULL ) {
-			continue;
-		}
+  for ( param = conninfo; param && param->keyword; param++ ) {
+    if ( ! param->val ) {
+      continue;
+    }
+    switch ( output ) {
+      case CP_OUT_DELIMITED:
+        fprintf(stdout, "%s%s%s\n", param->keyword, delimiter, param->val);
+        break;
 
-		switch ( output ) {
-			case CP_OUTPUT_DELIMITED:
-				fprintf(stdout, "%s%s%s\n", param->keyword, delimiter, param->val);
-				break;
+      case CP_OUT_SHELL:
+        {
+          char *arg = cp_escape_shell_arg(param->val);
+          fprintf(stdout, "%s=%s\n", param->keyword, arg);
+          free(arg);
+        }
+        break;
 
-			case CP_OUTPUT_SHELL:
-				escaped = escape_shell_argument(param->val);
-				fprintf(stdout, "%s=%s\n", param->keyword, escaped);
-				free(escaped);
-				break;
+      case CP_OUT_JSON:
+        #ifdef CP_HAVE_JSON
+          json_object_object_add(
+            json_obj,
+            param->keyword,
+            json_object_new_string(param->val)
+          );
+        #else
+          abort();
+        #endif
+        break;
 
-			case CP_OUTPUT_JSON:
-				json_object_object_add(
-					json_obj,
-					param->keyword,
-					json_object_new_string(param->val)
-				);
-				break;
-		}
-	}
+      default: abort();
+    }
+  }
 
-	if ( output == CP_OUTPUT_JSON ) {
-		fprintf(stdout, "%s\n", json_object_to_json_string(json_obj));
-	}
+  if ( output == CP_OUT_JSON ) {
+    #ifdef CP_HAVE_JSON
+      fprintf(stdout, "%s\n", json_object_to_json_string(json_obj));
+      json_object_put(json_obj);
+    #else
+      abort();
+    #endif
+  }
 
-	PQconninfoFree(conninfo);
-	json_object_put(json_obj);
-
-	return 0;
+  end:
+    PQconninfoFree(conninfo);
+    return CP_EX_OK;
 }
-

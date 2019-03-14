@@ -1,0 +1,12 @@
+#compdef conninfo-parse
+
+_arguments -s -S : \
+  '1: :_guard "^-*" "conninfo string"' \
+  '(: * -)'{-h,--help}'[display help information]' \
+  '(: * -)'{-V,--version}'[display version information]' \
+  + '(q)' \
+  {-q,--quiet}'[suppress normal output]' \
+  + '(m)' \
+  {-d+,--delimited=}'[output in delimited format with specified delimiter]:delimiter' \
+  {-j,--json}'[output in JSON format]' \
+  {-s,--shell}'[output in shell variable format]' \
