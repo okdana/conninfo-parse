@@ -157,7 +157,7 @@ cp_escape_shell_arg(const char *arg) {
   eptr = escaped = malloc(strlen(arg) * strlen("'\\''") + 3);
   *eptr++ = '\'';
 
-  while ( *arg ) {
+  for ( /**/; *arg; arg++ ) {
     if ( *arg == '\'' ) {
       *eptr++ = '\'';
       *eptr++ = '\\';
@@ -166,7 +166,6 @@ cp_escape_shell_arg(const char *arg) {
     } else {
       *eptr++ = *arg;
     }
-    arg++;
   }
 
   *eptr++ = '\'';
